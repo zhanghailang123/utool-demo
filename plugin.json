@@ -1,0 +1,11 @@
+{
+  "main": "index.html",
+  "logo": "icon2.png",
+  "features": [
+    {
+      "code": "hello",
+      "explain": "hello world",
+      "cmds":["hello", "你好"]
+    }
+  ]
+}

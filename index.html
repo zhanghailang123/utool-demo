@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生成图像</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            height: 100vh;
+            margin: 0;
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }
+        #sidebar {
+            width: 250px;
+            background: #333;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px;
+        }
+        #logo {
+            width: 100px;
+            margin-bottom: 20px;
+        }
+        #image-list {
+            overflow-y: auto;
+            width: 100%;
+            height: 100%;
+        }
+        .thumbnail {
+            width: 90%;
+            margin: 10px auto;
+            border: 2px solid #555;
+            cursor: pointer;
+        }
+        #main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        #canvas {
+            border: 2px solid #555;
+            margin-bottom: 20px;
+        }
+        .buttons {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button.loading {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            padding: 10px;
+            background-color: #f4f4f9;
+            border: 2px solid #555;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        input[type="file"]:disabled {
+            cursor: not-allowed;
+            background-color: #ccc;
+        }
+        #imageContainer {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            padding: 10px;
+        }
+        .generated-image {
+            border: 2px solid #555;
+            width: 300px;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+<div id="sidebar">
+    <img id="logo" src="icon2.png" alt="Logo"> <!-- 替换为实际的Logo URL -->
+    <div id="image-list"></div>
+</div>
+<div id="main-content">
+    <input type="file" id="fileInput">
+    <button id="uploadButton" onclick="processFile()">上传并生成图像</button>
+    <div id="imageContainer"></div>
+</div>
+
+<script>
+    async function processFile() {
+        const fileInput = document.getElementById('fileInput');
+        const uploadButton = document.getElementById('uploadButton');
+
+        if (!fileInput.files.length) {
+            alert('请上传一个txt文件。');
+            return;
+        }
+
+        uploadButton.classList.add('loading');
+        uploadButton.textContent = '生成中...';
+        fileInput.disabled = true;
+
+        const file = fileInput.files[0];
+        const text = await file.text();
+        const lines = text.split('\n');
+
+        let textChunk = '';
+        for (let i = 0; i < lines.length; i++) {
+            textChunk += lines[i] + '\n';
+            if ((i + 1) % 3 === 0 || i + 1 === lines.length) {
+                const prompt = textChunk.replace(/\n/g, ' ').replace('A: ', ' ');
+                const aiImageUrl = await getPicLinkUrl(prompt);
+                const textImage = drawText(textChunk);
+                const finalImage = await mergePics(aiImageUrl, textImage);
+                document.getElementById('imageContainer').appendChild(finalImage);
+                displayInSidebar(finalImage.src);
+                saveImage(finalImage.src); // 保存图片到服务器
+                textChunk = '';
+            }
+        }
+
+        uploadButton.classList.remove('loading');
+        uploadButton.textContent = '上传并生成图像';
+        fileInput.disabled = false;
+    }
+
+    async function getPicLinkUrl(prompt) {
+        const url = "https://stablediffusion3net.erweima.ai/api/v1/generate/create";
+        const requestsStr = {
+            "prompt": prompt,
+            "negativePrompt": "",
+            "model": "realistic",
+            "size": "1:1",
+            "batchSize": "1",
+            "imageUrl": ""
+        };
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0',
+                'referer': 'https://stablediffusion3.net/',
+                'Uniqueid': Math.random().toString(36).substring(7)
+            },
+            body: JSON.stringify(requestsStr)
+        });
+
+        const data = await response.json();
+        const recordUuid = data.data.recordUuid;
+
+        return await pollForImage(recordUuid);
+    }
+
+    async function pollForImage(recordUuid) {
+        const url = "https://stablediffusion3net.erweima.ai/api/v1/generate/record-detail";
+        let picState = 'generating';
+        let imageUrl = '';
+
+        while (picState !== 'success') {
+            const response = await fetch(url + `?recordUuid=${recordUuid}`);
+            const data = await response.json();
+            picState = data.data.picState;
+            if (picState === 'success') {
+                imageUrl = JSON.parse(data.data.picUrl)[0].picUrl;
+            }
+            await new Promise(resolve => setTimeout(resolve, 5000)); // sleep for 5 seconds
+        }
+
+        return imageUrl;
+    }
+
+    function drawText(text) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 600;
+        canvas.height = 300;
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'white';
+        ctx.font = '20px Arial';
+        const lines = text.split('\n');
+        let y = 30;
+        for (const line of lines) {
+            ctx.fillText(line, 10, y);
+            y += 30;
+        }
+        return canvas;
+    }
+
+    async function mergePics(aiImageUrl, textCanvas) {
+        const aiImage = new Image();
+        aiImage.crossOrigin = "Anonymous";
+        aiImage.src = aiImageUrl;
+        await aiImage.decode();
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = aiImage.width;
+        canvas.height = aiImage.height + textCanvas.height;
+
+        ctx.drawImage(aiImage, 0, 0);
+        ctx.drawImage(textCanvas, 0, aiImage.height);
+
+        const finalImage = new Image();
+        finalImage.src = canvas.toDataURL('image/jpeg');
+        finalImage.className = 'generated-image';
+        return finalImage;
+    }
+
+    function displayInSidebar(imageSrc) {
+        const imageList = document.getElementById('image-list');
+        const img = document.createElement('img');
+        img.src = imageSrc;
+        img.className = 'thumbnail';
+        img.onclick = function() {
+            displayOnCanvas(imageSrc);
+        }
+        imageList.appendChild(img);
+    }
+
+    function displayOnCanvas(dataURL) {
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        const img = new Image();
+        img.src = dataURL;
+
+        img.onload = function() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // 清除画布
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        }
+    }
+
+    async function saveImage(imageData) {
+        const response = await fetch('http://localhost:3000/save-image', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ imageData: imageData })
+        });
+
+        if (!response.ok) {
+            alert('保存图片时出错');
+        } else {
+            console.log('图片保存成功');
+        }
+    }
+</script>
+</body>
+</html>
