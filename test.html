@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draw QA on Canvas</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #333; color: white; }
+        #canvas { border: 1px solid #ccc; background: black; }
+        input, button { margin-top: 20px; }
+    </style>
+</head>
+<body>
+<input type="file" id="fileInput">
+<button onclick="loadAndDrawText()">Load and Draw Text</button>
+<br>
+<canvas id="canvas"></canvas>
+<br>
+<button onclick="saveCanvasAsImage()">Save as Image</button>
+<script src="app2.js"></script>
+</body>
+</html>
